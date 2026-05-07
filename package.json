@@ -2,5 +2,12 @@
   "dependencies": {
     "@openzeppelin/contracts": "^4.8.2",
     "json": "^11.0.0"
+  },
+  "scripts": {
+    "compile": "truffle compile",
+    "test": "truffle test --network test"
+  },
+  "devDependencies": {
+    "truffle": "5.11.5"
   }
 }

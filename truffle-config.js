@@ -1,9 +1,25 @@
+const ganache = require("ganache");
+
+let testProvider;
+
 module.exports = {
   networks: {
     development: {
-     host: "127.0.0.1",     // Localhost (default: none)
-     port: 7545,            // Ganache GUI default port
-     network_id: "*",       // Any network (default: none)
+      host: "127.0.0.1",
+      port: 7545,
+      network_id: "*",
+    },
+    test: {
+      provider: () => {
+        if (!testProvider) {
+          testProvider = ganache.provider({
+            chain: { chainId: 5777, networkId: 5777 },
+            logging: { quiet: true },
+          });
+        }
+        return testProvider;
+      },
+      network_id: 5777,
     },
   },
   mocha: {
@@ -11,15 +27,14 @@ module.exports = {
   },
   compilers: {
     solc: {
-      version: "0.8.19",      // Fetch exact version from solc-bin (default: truffle's version)
-      // docker: true,        // Use "0.5.1" you've installed locally with docker (default: false)
-      settings: {          // See the solidity docs for advice about optimization and evmVersion
-       optimizer: {
-         enabled: true,
-         runs: 200
-       },
-       viaIR: true
-      }
-    }
+      version: "0.8.19",
+      settings: {
+        optimizer: {
+          enabled: true,
+          runs: 200,
+        },
+        viaIR: true,
+      },
+    },
   },
 };

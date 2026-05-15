@@ -1,145 +1,80 @@
-# Voucher MVP 구현 상태 문서
+# Voucher Anti-Fraud UsageHash 구현 상태
 
-작성 시각: 2026-05-08 01:50 KST
-기준 문서: `.omx/plans/prd-blockchain-voucher-mvp.md`, `.omx/plans/test-spec-blockchain-voucher-mvp.md`
-검증 기준 repo: `dev/blockchain`
+작성 시각: 2026-05-14 KST
+기준 문서: `.omx/plans/blockchain-antifraud-usagehash-ralplan.md`, `.omx/plans/prd-blockchain-antifraud-usagehash.md`, `.omx/plans/test-spec-blockchain-antifraud-usagehash.md`
 
 ## 1. 결론
 
-Blockchain Voucher Contract MVP는 현재 `dev/blockchain` 범위에서 구현 및 단위/통합 테스트 검증이 완료된 상태다. 다만 Backend web3j 연동, Frontend QR/지갑 UX, 전체 E2E 데모, IPFS 자동화, 공개망 배포, 실제 결제/PG는 계획 문서 기준 후속 과제이며 이번 완료 범위에 포함하지 않는다.
+`Voucher` v1 anti-fraud 강화는 contract/local verification 범위에서 구현됐다. 핵심 변경은 `recordCommitmentHash` 입력과 컨트랙트 내부 `usageHash` 계산이다. production DB adapter와 backend/frontend ABI 반영은 후속 과제다.
 
 | 항목 | 현재 상태 | 근거 |
 |---|---:|---|
-| 컨트랙트 구현 | 완료 | `contracts/Voucher.sol`, `contracts/VoucherDTO.sol` |
-| Migration | 완료 | `migrations/2_deploy_voucher.js` |
-| Truffle compile | PASS | `npm run compile` exit 0 |
-| Truffle test | PASS | `npm test` 8 passing, exit 0 |
-| ABI 산출 | 완료 | `build/contracts/Voucher.json` |
-| ABI 핵심 함수/이벤트 | PASS | `mintVoucher`, `useVoucher`, `useVoucherByMerchant`, `VoucherUsed` 존재 |
-| 테스트 리포트 정합성 | 완료 | `scripts/voucher-mvp-test-report.md` 갱신 |
-| Backend/Frontend 구현 | 후속 | PRD out-of-scope 및 deep-interview non-goal |
-| 전체 E2E 데모 | 후속 | PRD out-of-scope 및 deep-interview non-goal |
+| Contract event/API 강화 | 완료 | `contracts/Voucher.sol` |
+| EIP-712 typed data 변경 | 완료 | `recordCommitmentHash` 포함 |
+| zero commitment 방지 | 완료 | `recordCommitmentHash != bytes32(0)` |
+| contract-computed `usageHash` | 완료 | `_useVoucher`에서 `keccak256(abi.encode(...))` |
+| Canonical schema vector test | PASS | `test/Voucher_Test.js` |
+| Direct/merchant/replay/tamper tests | PASS | `npm test` 12 passing |
+| Local verifier integration | PASS | `test/helpers/usageHashVerifier.js` |
+| Docs claim boundary | 완료 | `../docs/02-*`, `../docs/03-*`, `../docs/06-*`, `../docs/07-*` |
+| Production DB adapter | 후속 | repo 내 adapter 미확인 |
 
-## 2. 구현 범위 매핑
+## 2. Acceptance Criteria 상태
 
-| PRD 범위 | 대상 | 상태 | 비고 |
+| AC | 기준 | 상태 | 근거 |
 |---|---|---:|---|
-| DTO | `contracts/VoucherDTO.sol` | 완료 | `VoucherProgram`, `VoucherInfo` 기준 |
-| 컨트랙트 | `contracts/Voucher.sol` | 완료 | ERC721Enumerable + Ownable + EIP712 기반 |
-| 배포 | `migrations/2_deploy_voucher.js` | 완료 | Voucher 배포 포함 |
-| 테스트 | `test/Voucher_Test.js`, `test/Ticket_Test.js` | 검증 완료 | 8 passing |
-| ABI | `build/contracts/Voucher.json` | 검증 완료 | 후속 backend 연동 입력 |
-| 문서 | `scripts/voucher-mvp-test-report.md` | 완료 | 현재 PASS 결과 반영 |
+| AC-1 | DB/off-chain 잔액 조작이 `voucherValue[tokenId]`를 변경하지 못함 | PASS | 잔액 source of truth는 public contract state |
+| AC-2 | value setter 없음 | PASS | ABI/static test |
+| AC-3 | `newValue = oldValue - amount` 내부 계산 | PASS | `_useVoucher` 구현 |
+| AC-4 | backend/비소유자 direct 차감 실패 | PASS | direct revert test |
+| AC-5 | owner signature 없는 대리 사용 실패 | PASS | wrong signer/invalid signature tests |
+| AC-6 | replay 실패 | PASS | merchant replay test |
+| AC-7 | event에 old/new/amount/nonce/commitment/usageHash 포함 | PASS | ABI/event assertion |
+| AC-8 | event `usageHash` 재계산 일치 | PASS | direct/merchant success tests |
+| AC-9 | 외부 `usageHash` 주입 API 없음 | PASS | ABI static test |
+| AC-10 | zero `recordCommitmentHash` 실패 | PASS | direct/merchant revert tests |
+| AC-11 | signed field tamper 실패 | PASS | amount/merchant/record/deadline/nonce tamper test |
+| AC-12 | verifier `VERIFIED` | PASS | local verifier integration |
+| AC-13 | verifier `MISMATCH` | PASS | mutated canonical detail test |
+| AC-14 | verifier `MISSING_DB` | PASS | event-only test |
+| AC-15 | verifier `MISSING_ONCHAIN` | PASS | record-only test |
+| AC-15a | duplicate commitment finding | PASS | `DUPLICATE_COMMITMENT` test |
+| AC-16 | 전체 회귀 테스트 통과 | PASS | `npm test` 12 passing |
+| AC-17 | 문서 claim boundary 갱신 | PASS | docs updated |
 
-## 3. Acceptance Criteria 상태
+## 3. 변경 파일
 
-| ID | 기준 | 상태 | 근거 |
-|---|---|---:|---|
-| AC-1 | G-1~G-4 결과 기록 | 완료 | `.omx/state/blockchain-voucher-gates.md` 및 본 문서 검증 섹션 |
-| AC-2 | `truffle compile` 성공 | PASS | `npm run compile` exit 0 |
-| AC-3 | `truffle test` 성공 | PASS | `npm test` 8 passing |
-| AC-4 | owner만 `createVoucherProgram`, `mintVoucher`, `approveMerchant` 성공 | PASS | `Voucher_Test.js` owner permissions |
-| AC-5 | non-owner의 owner-only 함수 호출은 revert | PASS | `Voucher_Test.js` owner permissions |
-| AC-6 | mint 후 `ownerOf`, `voucherValue`, `getVoucherInfo`, `getTokenURI`, `tokenURI` 값 일치 | PASS | `Voucher_Test.js` mint and read model |
-| AC-7 | 직접 `useVoucher` 성공 시 잔액 감소, nonce 증가, `VoucherUsed` 이벤트 값 일치 | PASS | `Voucher_Test.js` direct useVoucher |
-| AC-8 | 직접 `useVoucher`는 미소유자/미승인 가맹점/0원/잔액 부족/만료에서 revert | PASS | `Voucher_Test.js` direct useVoucher revert matrix |
-| AC-9 | `useVoucherByMerchant`는 유효 EIP-712 서명으로 성공 | PASS | `Voucher_Test.js` merchant EIP-712 success |
-| AC-10 | 가맹점 호출은 같은 서명 재사용 시 revert | PASS | `Voucher_Test.js` merchant EIP-712 replay |
-| AC-11 | 잘못된 signer, 미승인 가맹점, 만료 deadline, 잔액 부족에서 revert | PASS | `Voucher_Test.js` merchant EIP-712 revert matrix |
-| AC-12 | canonical typed tuple fixture hash와 이벤트 `metadataHash`가 정확히 일치 | PASS | `Voucher_Test.js` metadataHash assertion |
-| AC-13 | DB 상세 JSON 원문과 `UseRecord` 상세 내역은 컨트랙트 state에 저장하지 않음 | 충족 | 컨트랙트는 hash/event 및 voucher state 중심 |
-| AC-14 | ABI에서 핵심 함수/이벤트 확인 가능 | PASS | ABI check 4개 항목 true |
-| AC-15 | backend ABI 불일치가 후속 risk로 문서화됨 | 완료 | 후속 과제 섹션 |
+| 파일 | 변경 요약 |
+|---|---|
+| `contracts/Voucher.sol` | event/API/typehash를 `recordCommitmentHash`로 전환, `usageHash` 내부 계산 |
+| `test/Voucher_Test.js` | canonical vector, direct/merchant, tamper, local verifier tests 추가 |
+| `test/helpers/usageHashVerifier.js` | canonical usage detail hash, file-backed store, verifier result matrix 구현 |
+| `build/contracts/Voucher.json` | Truffle compile 산출 ABI 갱신 |
+| `scripts/voucher-mvp-test-report.md` | 최신 검증 리포트로 갱신 |
+| `../docs/02-UX플로우.md` | 온체인 영구 상세 기록 과장 표현을 event anchor + off-chain verifier 범위로 정정 |
+| `../docs/03-*`, `../docs/06-*`, `../docs/07-*` | RDB 불변 주장을 온체인 근거 기반 사후 탐지 범위로 정리 |
 
-## 4. 검증 환경 및 도구 확인
-
-| 도구 | 확인 결과 | 사용 여부 |
-|---|---|---|
-| Redis | `redis-server v8.6.3` | 미사용: 이번 범위는 blockchain 문서/검증 |
-| MySQL | `mysql 9.6.0` | 미사용: 이번 범위는 blockchain 문서/검증 |
-| Ganache | `ganache v7.9.1` | 사용: Truffle `test` network provider |
-| Truffle | `Truffle v5.11.5` | 사용: compile/test |
-
-`µWS` native binary 경고는 Ganache가 Node.js 구현으로 fallback한다는 경고이며, 이번 검증에서는 compile/test exit code 0으로 완료됐다.
-
-## 5. 실행한 검증
-
-### 5.1 Compile
+## 4. 검증 명령
 
 ```bash
-cd dev/blockchain && npm run compile
+cd blockchain && npm run compile
+cd blockchain && npm test
 ```
 
-결과:
+최신 결과:
 
 ```text
-Compiling your contracts...
-===========================
-> Everything is up to date, there is nothing to compile.
-compile_exit=0
+npm run compile: exit 0, everything up to date
+npm test: 12 passing
+static/docs checks: usageHashInput=false, valueSetter=false, legacy hash name absent, diff --check PASS
 ```
 
-### 5.2 Test
+## 5. 완료 판단 경계
 
-```bash
-cd dev/blockchain && npm test
-```
-
-결과:
-
-```text
-Contract: Ticket
-  ✔ creates a perform and stores current Ticket contract fields
-  ✔ creates a ticket for an existing free-price perform and stores ticket info
-
-Contract: Voucher
-  owner permissions
-    ✔ owner-only functions succeed for owner and revert for non-owner
-  mint and read model
-    ✔ stores owner, balance, voucher info, getTokenURI, tokenURI, and ABI entries
-  direct useVoucher
-    ✔ decreases balance, increments nonce, and emits canonical metadataHash
-    ✔ reverts for non-owner, unapproved merchant, zero amount, insufficient balance, and expired voucher
-  merchant EIP-712 useVoucherByMerchant
-    ✔ succeeds with valid owner signature and rejects replay
-    ✔ reverts for wrong signer, unapproved merchant, expired deadline, and insufficient balance
-
-8 passing
-test_exit=0
-```
-
-### 5.3 ABI 확인
-
-```bash
-cd dev/blockchain
-node - <<'NODE'
-const abi = require('./build/contracts/Voucher.json').abi;
-for (const name of ['mintVoucher', 'useVoucher', 'useVoucherByMerchant', 'VoucherUsed']) {
-  console.log(`${name}=${abi.some((entry) => entry.name === name)}`);
-}
-NODE
-```
-
-결과:
-
-```text
-mintVoucher=true
-useVoucher=true
-useVoucherByMerchant=true
-VoucherUsed=true
-abi_exit=0
-```
-
-## 6. 후속 구현 및 테스트 계획
-
-| 우선순위 | 후속 과제 | 구현 계획 | 테스트 계획 |
-|---:|---|---|---|
-| 1 | Backend web3j 연동 | `Voucher.json` ABI 기반 Java wrapper/service 연동 | 로컬 Ganache 대상 contract call integration test |
-| 2 | Frontend QR/지갑 UX | 바우처 조회/사용 요청 화면과 서명 UX 설계 | 지갑 서명, QR payload, 오류 상태 UI 검증 |
-| 3 | 전체 E2E 데모 | create program → mint → user/merchant use → backend 기록 대조 | backend+frontend+chain 통합 시나리오 |
-| 4 | IPFS/파일 저장 자동화 | DB JSON 또는 metadata 원문 저장소 정책 결정 | metadataHash와 원문 재계산 일치 검증 |
-| 5 | 공개망 배포 | 네트워크별 migration/config/주소 관리 | testnet 배포 후 explorer/contract call 검증 |
-
-## 7. 완료 판단 경계
-
-이번 문서 기준으로 “Blockchain Voucher Contract MVP”는 완료로 판단한다. 그러나 “서비스 전체 MVP” 또는 “백엔드/프론트 포함 E2E 완료”로 표현하면 안 된다.
+| 항목 | 판단 |
+|---|---|
+| Contract/local verification | 완료 |
+| Production DB verifier adapter | 후속 |
+| Backend/frontend ABI migration | 후속 |
+| RDB 자체 불변성 | 보장하지 않음 |
+| 현실 결제 사실성/피싱/merchant key 탈취 방어 | v1 비범위 |

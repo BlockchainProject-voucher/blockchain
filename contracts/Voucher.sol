@@ -13,7 +13,7 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
 
     bytes32 public constant USE_VOUCHER_TYPEHASH =
         keccak256(
-            "UseVoucher(uint256 tokenId,address user,address merchant,uint256 amount,bytes32 metadataHash,uint256 nonce,uint256 deadline)"
+            "UseVoucher(uint256 tokenId,address user,address merchant,uint256 amount,bytes32 recordCommitmentHash,uint256 nonce,uint256 deadline)"
         );
 
     Counters.Counter private _tokenIds;
@@ -54,7 +54,9 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
         uint256 amount,
         uint256 oldValue,
         uint256 newValue,
-        bytes32 metadataHash
+        uint256 nonce,
+        bytes32 recordCommitmentHash,
+        bytes32 usageHash
     );
 
     constructor() ERC721("Voucher", "VCHR") EIP712("Voucher", "1") {}
@@ -136,17 +138,17 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
         uint256 tokenId,
         address merchant,
         uint256 amount,
-        bytes32 metadataHash
+        bytes32 recordCommitmentHash
     ) public returns (bool) {
         require(ownerOf(tokenId) == msg.sender, "Voucher: caller is not owner");
-        _useVoucher(tokenId, msg.sender, merchant, amount, metadataHash);
+        _useVoucher(tokenId, msg.sender, merchant, amount, recordCommitmentHash);
         return true;
     }
 
     function useVoucherByMerchant(
         uint256 tokenId,
         uint256 amount,
-        bytes32 metadataHash,
+        bytes32 recordCommitmentHash,
         uint256 deadline,
         bytes memory ownerSignature
     ) public returns (bool) {
@@ -155,12 +157,12 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
         address user = ownerOf(tokenId);
         uint256 nonce = useNonce[tokenId];
         bytes32 structHash = keccak256(
-            abi.encode(USE_VOUCHER_TYPEHASH, tokenId, user, msg.sender, amount, metadataHash, nonce, deadline)
+            abi.encode(USE_VOUCHER_TYPEHASH, tokenId, user, msg.sender, amount, recordCommitmentHash, nonce, deadline)
         );
         address signer = ECDSA.recover(_hashTypedDataV4(structHash), ownerSignature);
         require(signer == user, "Voucher: invalid signature");
 
-        _useVoucher(tokenId, user, msg.sender, amount, metadataHash);
+        _useVoucher(tokenId, user, msg.sender, amount, recordCommitmentHash);
         return true;
     }
 
@@ -209,10 +211,11 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
         address user,
         address merchant,
         uint256 amount,
-        bytes32 metadataHash
+        bytes32 recordCommitmentHash
     ) private {
         require(approvedMerchant[merchant], "Voucher: unapproved merchant");
         require(amount > 0, "Voucher: amount is zero");
+        require(recordCommitmentHash != bytes32(0), "Voucher: empty record commitment");
 
         VoucherInfo storage info = _voucherInfos[tokenId];
         require(info.status == 1, "Voucher: inactive voucher");
@@ -222,14 +225,30 @@ contract Voucher is ERC721Enumerable, Ownable, EIP712, VoucherDTO {
         require(oldValue >= amount, "Voucher: insufficient balance");
 
         uint256 newValue = oldValue - amount;
+        uint256 nonce = useNonce[tokenId];
+        bytes32 usageHash = keccak256(
+            abi.encode(
+                recordCommitmentHash,
+                tokenId,
+                user,
+                merchant,
+                amount,
+                oldValue,
+                newValue,
+                nonce,
+                block.chainid,
+                address(this)
+            )
+        );
+
         voucherValue[tokenId] = newValue;
-        useNonce[tokenId] += 1;
+        useNonce[tokenId] = nonce + 1;
         info.amount = newValue;
         info.owner = user;
         if (newValue == 0) {
             info.status = 2;
         }
 
-        emit VoucherUsed(tokenId, user, merchant, amount, oldValue, newValue, metadataHash);
+        emit VoucherUsed(tokenId, user, merchant, amount, oldValue, newValue, nonce, recordCommitmentHash, usageHash);
     }
 }

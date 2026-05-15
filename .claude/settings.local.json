@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/user/Desktop/BC/blockchain-Voucher/**)",
+      "Read(//Users/user/Desktop/BC/blockchain-Voucher/docs/**)",
+      "Read(//Users/user/Desktop/BC/ttocket/blockchain/**)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

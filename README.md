@@ -110,6 +110,47 @@ ls ../backend/gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
     -o ../backend/gradle/wrapper/gradle-wrapper.jar
 chmod +x ../backend/gradlew
 ```
+#### backend에 파일생성
+위치: ~/backend/src/main/resources/application.yml
+```bash
+spring:
+  application:
+    name: voucher-backend
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/voucher?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: root
+    password:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+server:
+  port: 8080
+
+app:
+  base-url: http://localhost:8080
+
+# Blockchain (Hardhat localhost)
+#   private-key    : Hardhat Account #0 (deploy.js의 deployer 이며 MINTER_ROLE 보유, 고정)
+#   contract-address: deployments/localhost.json 의 address (재배포 시 갱신 필요)
+blockchain:
+  rpc-url: "http://localhost:8545"
+  private-key: "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+  contract-address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+
+logging:
+  level:
+    com.voucher: DEBUG
+    org.web3j: INFO
+```
 
 ### 매번 개발할 때 (3개의 터미널 필요)
 

@@ -1,20 +1,23 @@
-# Voucher Anti-Fraud UsageHash 테스트 리포트
+# Voucher 전용 블록체인 패키지 테스트 리포트
 
-작성 시각: 2026-05-14 KST
-작성 범위: `blockchain` Truffle compile/test, ABI 확인, local verifier integration, docs claim-boundary check
+작성 시각: 2026-05-22 UTC
+작성 범위: `blockchain` Truffle compile/test, ABI 확인, dependency/docs boundary check
 
 ## 1. 결론
 
-`Voucher` contract/local verifier 범위는 compile, Truffle test, ABI 확인을 통과했다. production DB adapter와 backend/frontend 호출부 반영은 후속 범위다.
+`Voucher` contract 범위는 compile, Ganache 기반 Truffle test, ABI deep equality, legacy keyword 검사, dependency snapshot 비교, root docs checksum 비교를 통과했다.
 
 | 검증 | 결과 | 근거 |
 |---|---:|---|
 | Compile | PASS | `npm run compile` exit 0 |
-| Truffle test | PASS | `npm test` 12 passing, exit 0 |
-| ABI 함수/이벤트 확인 | PASS | `Voucher.json`에 `mintVoucher`, `useVoucher`, `useVoucherByMerchant`, `VoucherUsed` 존재 |
-| `usageHash` 외부 주입 금지 | PASS | `useVoucher*` ABI inputs에 `usageHash` 없음 |
-| local verifier | PASS | Ganache 실제 event + 파일 기반 detail store로 `VERIFIED/MISMATCH/MISSING_DB/MISSING_ONCHAIN`, `DUPLICATE_COMMITMENT` 검증 |
-| docs claim boundary | PASS | legacy hash 명칭 잔존 없음, UX 문서의 상세 기록 과장 표현 정정 |
+| Truffle test | PASS | `npm test` 10 passing, exit 0 |
+| ABI wrapper | PASS | `abi.json`이 `{ "abi": [...] }` 형태 유지 |
+| ABI 동기화 | PASS | `abi.json.abi`와 `build/contracts/Voucher.json.abi` deep equality |
+| ABI 보존 | PASS | cleanup 전/후 Voucher ABI deep equality |
+| Legacy keyword 검사 | PASS | `blockchain/` recursive grep no match |
+| Dependency 표면 | PASS | dependency snapshot 동일 |
+| Root docs product file | PASS | checksum manifest 동일 |
+| Diff whitespace | PASS | `git diff --check` |
 
 ## 2. 실행 환경
 
@@ -37,8 +40,10 @@ cd blockchain && npm run compile
 결과 요약:
 
 ```text
-Artifacts written to /home/azureuser/projects/bc-voucher/blockchain/build/contracts
-Compiled successfully using:
+> Compiling ./contracts/Voucher.sol
+> Compiling ./contracts/VoucherDTO.sol
+> Artifacts written to /home/azureuser/projects/bc/blockchain/build/contracts
+> Compiled successfully using:
    - solc: 0.8.19+commit.7dd6d404.Emscripten.clang
 ```
 
@@ -53,10 +58,6 @@ cd blockchain && npm test
 결과 요약:
 
 ```text
-Contract: Ticket
-  ✔ creates a perform and stores current Ticket contract fields
-  ✔ creates a ticket for an existing free-price perform and stores ticket info
-
 Contract: Voucher
   canonical hash schema
     ✔ recalculates frozen recordCommitmentHash and usageHash vectors with ABI encoding
@@ -75,33 +76,28 @@ Contract: Voucher
     ✔ verifies matching Ganache VoucherUsed event against a file-backed usage detail store
     ✔ returns MISMATCH, MISSING_DB, MISSING_ONCHAIN, and duplicate commitment findings
 
-12 passing
+10 passing
 ```
 
 ## 5. ABI 확인
 
 ```bash
 node - <<'NODE'
-const abi = require('./build/contracts/Voucher.json').abi;
-for (const name of ['mintVoucher', 'useVoucher', 'useVoucherByMerchant', 'VoucherUsed']) {
-  console.log(`${name}=${abi.some((entry) => entry.name === name)}`);
-}
-const useVoucher = abi.find((entry) => entry.name === 'useVoucher');
-const merchantUse = abi.find((entry) => entry.name === 'useVoucherByMerchant');
-console.log(`usageHashInput=${[...useVoucher.inputs, ...merchantUse.inputs].some((input) => input.name === 'usageHash')}`);
+const fs = require('fs');
+const wrapper = JSON.parse(fs.readFileSync('abi.json', 'utf8'));
+const voucher = JSON.parse(fs.readFileSync('build/contracts/Voucher.json', 'utf8'));
+console.log(Array.isArray(wrapper.abi));
+console.log(JSON.stringify(wrapper.abi) === JSON.stringify(voucher.abi));
 NODE
 ```
 
 기대 결과:
 
 ```text
-mintVoucher=true
-useVoucher=true
-useVoucherByMerchant=true
-VoucherUsed=true
-usageHashInput=false
+true
+true
 ```
 
 ## 6. 완료 판단 경계
 
-이번 완료 범위는 `Voucher` contract와 local verification이다. RDB 자체 불변, 현실 결제 사실성, 피싱 방어, merchant key 탈취 방어, production DB adapter 완료로 표현하지 않는다.
+이번 완료 범위는 `Voucher` contract, local integration test, ABI artifact sync다. 외부 배포와 frontend/backend 호출부 반영은 비범위다.

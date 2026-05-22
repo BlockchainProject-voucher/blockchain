@@ -5,9 +5,12 @@
   },
   "scripts": {
     "compile": "truffle compile",
+    "deploy:sepolia": "truffle migrate --network sepolia",
     "test": "truffle test --network test"
   },
   "devDependencies": {
+    "@truffle/hdwallet-provider": "2.1.15",
+    "dotenv": "17.4.2",
     "truffle": "5.11.5"
   }
 }
